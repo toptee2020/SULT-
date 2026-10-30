@@ -1,0 +1,116 @@
+#We use the Package 
+library(shiny)
+
+#Define the Makeham's parameters
+A = 0.00022
+B = 2.7e-6
+cc = 1.124
+ages_all = 20:80
+show = 20:100
+l0 = 100000
+
+#Define the formulas inside the function
+build_full <- function(i) {
+  v <- 1 / (1 + i)
+  n <- length(ages_all)
+  x <- ages_all
+  lx <- l0 * exp(-A * (x - 20) - B / log(cc) * (cc^x - cc^20))
+  px <- c(lx[-1] / lx[-n], 0)
+  qx <- 1 - px
+  Ax <- A2x <- adx <- numeric(n)
+  Ax[n] <- v * qx[n]; A2x[n] <- v^2 * qx[n]; adx[n] <- 1
+  for (k in (n - 1):1) {
+    Ax[k]  <- v   * qx[k] + v   * px[k] * Ax[k + 1]
+    A2x[k] <- v^2 * qx[k] + v^2 * px[k] * A2x[k + 1]
+    adx[k] <- 1 + v * px[k] * adx[k + 1]
+  }
+  sh    <- function(vec, m) c(vec[-seq_len(m)], rep(0, m))
+  nE    <- function(m) v^m * sh(lx, m) / lx
+  endow <- function(m) { E <- nE(m); Ax - E * sh(Ax, m) + E }
+  tann  <- function(m) adx - nE(m) * sh(adx, m)
+  data.frame(x = x, l = lx, q = qx, a = adx, A = Ax, A2 = A2x,
+             a10 = tann(10), A10 = endow(10),
+             a20 = tann(20), A20 = endow(20),
+             E5 = nE(5), E10 = nE(10), E20 = nE(20))
+}
+
+#define Products as the Insurance Type
+products <- c("Whole life insurance", "Term insurance", "Pure endowment",
+              "Endowment insurance", "Deferred insurance")
+
+# Calculate APV for each products 
+apv_unit <- function(d, i, age, prod, n) {
+  v  <- 1 / (1 + i)
+  a  <- d[d$x == age, ]
+  an <- d[d$x == age + n, ]
+  nE <- v^n * an$l / a$l
+  switch(prod,
+         "Whole life insurance" = a$A,
+         "Term insurance"       = a$A - nE * an$A,
+         "Pure endowment"       = nE,
+         "Endowment insurance"  = a$A - nE * an$A + nE,
+         "Deferred insurance"   = nE * an$A)
+}
+
+ui <- fluidPage(
+  titlePanel("Hakeem Adekunle SULT Single Premium Calculator"),
+  tabsetPanel(
+    tabPanel("Calculator",
+             sidebarLayout(
+               sidebarPanel(
+                 selectInput("prod", "Insurance type", products),
+                 selectInput("age", "Age of insured", 20:100, selected = 40),
+                 selectInput("i", "Interest rate i", seq(0.01, 0.10, 0.01), selected = 0.05),
+                 conditionalPanel("input.prod != 'Whole life insurance'",
+                                  selectInput("n", "Term / deferral period (years)", 1:30, selected = 10)),
+                 selectInput("benefit", "Benefit",
+                             c(1000, 10000, 50000, 100000, 250000, 500000, 1000000), selected = 100000)
+               ),
+               mainPanel(h3("Single premium (APV)"),
+                         h2(textOutput("apv")), br(), verbatimTextOutput("detail"))
+             )),
+    tabPanel("SULT table",
+             sidebarLayout(
+               sidebarPanel(
+                 selectInput("i2", "Interest rate i", seq(0.01, 0.10, 0.01), selected = 0.05),
+                 helpText("l_x and q_x do not depend on i. All other columns do."),
+                 downloadButton("dl", "Download table")),
+               mainPanel(tableOutput("tbl"))))
+  )
+)
+
+server <- function(input, output) {
+  full <- reactive(build_full(as.numeric(input$i)))
+  full2 <- reactive(build_full(as.numeric(input$i2)))
+  
+  unit <- reactive({
+    n <- if (input$prod == "Whole life insurance") 0 else as.numeric(input$n)
+    apv_unit(full(), as.numeric(input$i), as.numeric(input$age), input$prod, n)
+  })
+  
+  output$apv <- renderText({
+    req(is.finite(unit()))
+    format(round(as.numeric(input$benefit) * unit(), 2), big.mark = ",", nsmall = 2)
+  })
+  
+  output$detail <- renderText({
+    req(is.finite(unit()))
+    sprintf("%s\nAge %s, i = %s, benefit = %s\nAPV per 1 of benefit: %.5f",
+            input$prod, input$age, input$i,
+            format(as.numeric(input$benefit), big.mark = ","), unit())
+  })
+  
+  shown <- function(d) {
+    d <- d[d$x %in% show, ]
+    names(d) <- c("x", "l_x", "q_x", "a-due_x", "A_x", "2A_x",
+                  "a-due_x:10", "A_x:10", "a-due_x:20", "A_x:20",
+                  "5E_x", "10E_x", "20E_x")
+    d
+  }
+  output$tbl <- renderTable(shown(full2()), digits = 5)
+  output$dl <- downloadHandler(
+    filename = function() paste0("SULT_i", input$i2, ".csv"),
+    content  = function(file) write.csv(shown(full2()), file, row.names = FALSE))
+}
+
+shinyApp(ui, server)
