@@ -1,2 +1,3 @@
 # SULT-
 R Shinny Application of SULT for i = 0.01-01, and A calculator for Insurance Type Single Premium APV
+We would like to recreate SULT so that we can obtain correct values for the various insurance and annuity quantities for i=0.05, but also for other values of i between 0.01 and 0.10. We also want to build a calculator that takes as inputs the age of the insured, an interest rate between 0.01 and 0.10, the term or deferred period of the insurance contract and the benefit, and spits out the single premium (i.e. the APV) for either a whole life insurance, term insurance, pure endowment, endowment insurance or deferred insurance with these inputs. Please build drop-down menus in Excel where the user can choose all these inputs
